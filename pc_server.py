@@ -285,9 +285,11 @@ class YFPServer:
                 if message.get('type') == 'CONNECT':
                     self.clients[client_id] = {
                         'addr': addr,
+                        'udp_addr': addr,  # Store UDP address for responses
                         'connected_time': time.time(),
                         'frames_received': 0
                     }
+                    print(f"BASIC_DEBUG: Client UDP address stored: {addr}")
                     self.log_message(f"Client connected: {addr[0]}")
                     
                 elif message.get('type') == 'PING':
@@ -316,7 +318,8 @@ class YFPServer:
     def handle_client_images(self, client_socket, addr):
         """Handle image data from a specific client"""
         self.log_message(f"Image connection from {addr[0]}")
-        
+        print(f"BASIC_DEBUG: Starting image handler for client {addr}")
+
         while self.running:
             try:
                 # Read header length (4 bytes, big-endian integer)
@@ -373,7 +376,10 @@ class YFPServer:
                             continue
                 
                 if image_data and len(image_data) > 0:
+                    print(f"BASIC_DEBUG: Processing frame from {addr}, size={len(image_data)} bytes")
                     self.process_frame(image_data, frame_data, addr)
+                else:
+                    print(f"BASIC_DEBUG: No valid image data received from {addr}")
                     
             except Exception as e:
                 if self.running:
@@ -385,9 +391,11 @@ class YFPServer:
     
     def process_frame(self, image_data, frame_info, client_addr):
         """Process received frame with YOLO detection"""
+        print(f"BASIC_DEBUG: process_frame called for {client_addr}")
         if not self.model:
+            print("BASIC_DEBUG: No YOLO model loaded, skipping detection")
             return
-            
+
         start_time = time.time()
         
         try:
@@ -403,34 +411,43 @@ class YFPServer:
             
             # Extract detections
             detections = []
+            print(f"DETECTION_DEBUG: Processing YOLO results, found {len(results)} result objects")
             for r in results:
                 boxes = r.boxes
+                print(f"DETECTION_DEBUG: Result has boxes: {boxes is not None}")
                 if boxes is not None:
-                    for box in boxes:
+                    print(f"DETECTION_DEBUG: Found {len(boxes)} boxes")
+                    for i, box in enumerate(boxes):
                         x1, y1, x2, y2 = box.xyxy[0].tolist()
                         conf = box.conf[0].item()
                         cls = int(box.cls[0].item())
-                        
+
+                        print(f"DETECTION_DEBUG: Box {i}: class={cls} ({self.model.names[cls]}) conf={conf:.2f} coords=({x1:.1f},{y1:.1f},{x2:.1f},{y2:.1f})")
+
                         # Convert to relative coordinates
                         h, w = img.shape[:2]
                         x = x1 / w
-                        y = y1 / w
+                        y = y1 / h
                         width = (x2 - x1) / w
                         height = (y2 - y1) / h
-                        
-                        detections.append({
+
+                        detection = {
                             'x': x,
                             'y': y,
                             'width': width,
                             'height': height,
                             'class_name': self.model.names[cls],
                             'confidence': conf
-                        })
-                        
+                        }
+                        detections.append(detection)
+                        print(f"DETECTION_DEBUG: Added detection: {detection}")
+
                         # Draw detection on image for display
                         cv2.rectangle(img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
                         label = f"{self.model.names[cls]} {conf:.2f}"
                         cv2.putText(img, label, (int(x1), int(y1)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+            print(f"DETECTION_DEBUG: Total detections created: {len(detections)}")
             
             detection_time = int((time.time() - start_time) * 1000)
             
@@ -448,9 +465,23 @@ class YFPServer:
         except Exception as e:
             self.log_message(f"Frame processing error: {e}")
     
-    def send_detections(self, detections, frame_id, detection_time, client_addr):
+    def send_detections(self, detections, frame_id, detection_time, tcp_client_addr):
         """Send detection results back to client"""
         try:
+            # Find the UDP address for this client
+            client_ip = tcp_client_addr[0]
+            udp_addr = None
+
+            # Look for a client with matching IP address
+            for client_id, client_info in self.clients.items():
+                if client_info['addr'][0] == client_ip:
+                    udp_addr = client_info['udp_addr']
+                    break
+
+            if not udp_addr:
+                print(f"BASIC_DEBUG: No UDP address found for client {client_ip}, cannot send detections")
+                return
+
             response = {
                 'type': 'DETECTIONS',
                 'timestamp': int(time.time() * 1000),
@@ -460,11 +491,21 @@ class YFPServer:
                     'processing_time_ms': detection_time
                 }
             }
-            
+
+            print(f"DETECTION_DEBUG: Sending {len(detections)} detections to UDP {udp_addr} (TCP was {tcp_client_addr})")
+            print(f"DETECTION_DEBUG: Frame ID: {frame_id}, Processing time: {detection_time}ms")
+            for i, det in enumerate(detections):
+                print(f"DETECTION_DEBUG: Detection {i}: {det}")
+
             response_data = json.dumps(response).encode()
-            self.udp_socket.sendto(response_data, client_addr)
-            
+            print(f"DETECTION_DEBUG: JSON response length: {len(response_data)} bytes")
+            print(f"DETECTION_DEBUG: JSON response: {response_data.decode()[:200]}...")  # First 200 chars
+
+            self.udp_socket.sendto(response_data, udp_addr)
+            print(f"DETECTION_DEBUG: Successfully sent detection response to UDP {udp_addr}")
+
         except Exception as e:
+            print(f"DETECTION_DEBUG: Error sending detections: {e}")
             self.log_message(f"Error sending detections: {e}")
     
     def update_video_display(self, img):

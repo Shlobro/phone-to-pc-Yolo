@@ -81,33 +81,43 @@ public class NetworkClient {
 
     public void connect(String serverIP) {
         this.serverIP = serverIP;
+        Log.d(TAG, "BASIC_DEBUG: Connecting to server: " + serverIP);
         executor.execute(() -> {
             try {
                 udpSocket = new DatagramSocket();
-                
-                YFPMessage connectMsg = new YFPMessage(YFPMessage.MessageType.CONNECT, 
+                Log.d(TAG, "BASIC_DEBUG: UDP socket created");
+                Log.d(TAG, "BASIC_DEBUG: UDP socket local address: " + udpSocket.getLocalAddress());
+                Log.d(TAG, "BASIC_DEBUG: UDP socket local port: " + udpSocket.getLocalPort());
+
+                YFPMessage connectMsg = new YFPMessage(YFPMessage.MessageType.CONNECT,
                     new YFPMessage.ConnectData(android.os.Build.DEVICE, 1920, 1080));
-                
+
                 sendUdpMessage(connectMsg);
-                
+                Log.d(TAG, "BASIC_DEBUG: Sent CONNECT message to server");
+
                 tcpSocket = new Socket();
                 tcpSocket.connect(new InetSocketAddress(serverIP, SERVER_PORT), 5000);
-                
+                Log.d(TAG, "BASIC_DEBUG: TCP connection established");
+
                 isConnected = true;
                 mainHandler.post(() -> callback.onConnected());
-                
+
                 startListening();
-                
+
             } catch (Exception e) {
-                Log.e(TAG, "Connection failed", e);
+                Log.e(TAG, "BASIC_DEBUG: Connection failed", e);
                 mainHandler.post(() -> callback.onError("Connection failed: " + e.getMessage()));
             }
         });
     }
 
     public void sendFrame(byte[] imageData, long frameId, int width, int height) {
-        if (!isConnected) return;
-        
+        if (!isConnected) {
+            Log.w(TAG, "BASIC_DEBUG: Tried to send frame but not connected");
+            return;
+        }
+
+        Log.d(TAG, "BASIC_DEBUG: Sending frame " + frameId + ", size=" + imageData.length);
         executor.execute(() -> {
             try {
                 YFPMessage frameMsg = new YFPMessage(YFPMessage.MessageType.FRAME,
@@ -141,25 +151,42 @@ public class NetworkClient {
     }
 
     private void startListening() {
+        Log.d(TAG, "BASIC_DEBUG: Starting UDP listener thread");
         executor.execute(() -> {
             byte[] buffer = new byte[4096];
+            Log.d(TAG, "BASIC_DEBUG: UDP listener thread started, isConnected=" + isConnected);
             while (isConnected) {
                 try {
+                    if (udpSocket == null || udpSocket.isClosed()) {
+                        Log.e(TAG, "BASIC_DEBUG: UDP socket is null or closed, exiting listener");
+                        break;
+                    }
+
                     DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+                    Log.d(TAG, "BASIC_DEBUG: Waiting for UDP packet on port " + udpSocket.getLocalPort() + "...");
                     udpSocket.receive(packet);
-                    
+
                     String data = new String(packet.getData(), 0, packet.getLength());
+                    Log.d(TAG, "BASIC_DEBUG: Received UDP packet, length=" + packet.getLength());
+                    Log.d(TAG, "DETECTION_DEBUG: Received UDP data: " + data);
+
                     YFPMessage message = YFPMessage.fromJson(data);
-                    
+                    Log.d(TAG, "DETECTION_DEBUG: Parsed message type: " + message.type);
+
                     mainHandler.post(() -> handleMessage(message));
                     
                 } catch (SocketException e) {
                     if (isConnected) {
-                        Log.e(TAG, "Socket exception while listening", e);
+                        Log.e(TAG, "BASIC_DEBUG: Socket exception while listening", e);
+                    } else {
+                        Log.d(TAG, "BASIC_DEBUG: Socket closed, stopping UDP listener");
                     }
                     break;
                 } catch (IOException e) {
-                    Log.e(TAG, "Error receiving data", e);
+                    Log.e(TAG, "BASIC_DEBUG: IOException in UDP listener", e);
+                    break;
+                } catch (Exception e) {
+                    Log.e(TAG, "BASIC_DEBUG: Unexpected exception in UDP listener", e);
                     break;
                 }
             }
@@ -167,11 +194,38 @@ public class NetworkClient {
     }
 
     private void handleMessage(YFPMessage message) {
+        Log.d(TAG, "DETECTION_DEBUG: Received message type: " + message.type);
         switch (message.type) {
             case DETECTIONS:
+                Log.d(TAG, "DETECTION_DEBUG: Processing DETECTIONS message");
                 if (callback != null) {
-                    YFPMessage.DetectionsData detections = (YFPMessage.DetectionsData) message.data;
-                    callback.onDetectionsReceived(detections);
+                    try {
+                        YFPMessage.DetectionsData detections = (YFPMessage.DetectionsData) message.data;
+                        Log.d(TAG, "DETECTION_DEBUG: Cast successful, detections object: " + detections);
+                        if (detections != null) {
+                            Log.d(TAG, "DETECTION_DEBUG: DetectionsData not null, frame_id: " + detections.frameId);
+                            if (detections.detections != null) {
+                                Log.d(TAG, "DETECTION_DEBUG: Found " + detections.detections.length + " detections");
+                                for (int i = 0; i < detections.detections.length; i++) {
+                                    YFPMessage.Detection det = detections.detections[i];
+                                    Log.d(TAG, "DETECTION_DEBUG: Detection " + i + ": " + det.className +
+                                          " at (" + det.x + "," + det.y + "," + det.width + "," + det.height +
+                                          ") conf=" + det.confidence);
+                                }
+                            } else {
+                                Log.w(TAG, "DETECTION_DEBUG: detections.detections is null");
+                            }
+                            callback.onDetectionsReceived(detections);
+                        } else {
+                            Log.w(TAG, "DETECTION_DEBUG: DetectionsData is null after cast");
+                        }
+                    } catch (ClassCastException e) {
+                        Log.e(TAG, "DETECTION_DEBUG: ClassCastException when casting to DetectionsData", e);
+                        Log.e(TAG, "DETECTION_DEBUG: message.data class: " + (message.data != null ? message.data.getClass().getName() : "null"));
+                        Log.e(TAG, "DETECTION_DEBUG: message.data content: " + message.data);
+                    }
+                } else {
+                    Log.w(TAG, "DETECTION_DEBUG: callback is null");
                 }
                 break;
             case METRICS:

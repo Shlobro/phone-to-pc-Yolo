@@ -1,6 +1,8 @@
 package com.example.yoloandfeedonpcandcameraonphone;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.google.gson.annotations.SerializedName;
 
 public class YFPMessage {
@@ -28,7 +30,38 @@ public class YFPMessage {
     }
 
     public static YFPMessage fromJson(String json) {
-        return new Gson().fromJson(json, YFPMessage.class);
+        Gson gson = new Gson();
+        JsonObject jsonObject = JsonParser.parseString(json).getAsJsonObject();
+
+        MessageType type = MessageType.valueOf(jsonObject.get("type").getAsString());
+        long timestamp = jsonObject.get("timestamp").getAsLong();
+
+        Object data = null;
+        if (jsonObject.has("data") && !jsonObject.get("data").isJsonNull()) {
+            JsonObject dataObject = jsonObject.get("data").getAsJsonObject();
+
+            switch (type) {
+                case DISCOVER:
+                    data = gson.fromJson(dataObject, DiscoverData.class);
+                    break;
+                case CONNECT:
+                    data = gson.fromJson(dataObject, ConnectData.class);
+                    break;
+                case FRAME:
+                    data = gson.fromJson(dataObject, FrameData.class);
+                    break;
+                case DETECTIONS:
+                    data = gson.fromJson(dataObject, DetectionsData.class);
+                    break;
+                case METRICS:
+                    data = gson.fromJson(dataObject, MetricsData.class);
+                    break;
+            }
+        }
+
+        YFPMessage message = new YFPMessage(type, data);
+        message.timestamp = timestamp;
+        return message;
     }
 
     public static class DiscoverData {

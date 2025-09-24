@@ -81,3 +81,4 @@ The system uses a custom protocol with these message types:
 - Python server needs YOLO model file (yolov8n.pt) in project root
 - Both devices must be on same network for communication
 - Frame processing is CPU-intensive; consider GPU acceleration for better performance
+- in this project im running you in powershell not cmd so use those commands

@@ -232,18 +232,31 @@ public class MainActivity extends AppCompatActivity implements NetworkClient.Net
 
     @Override
     public void onDetectionsReceived(YFPMessage.DetectionsData detections) {
+        Log.d(TAG, "DETECTION_DEBUG: onDetectionsReceived called");
         List<DetectionOverlayView.DetectionBox> boxes = new ArrayList<>();
-        
-        if (detections.detections != null) {
-            for (YFPMessage.Detection detection : detections.detections) {
-                boxes.add(new DetectionOverlayView.DetectionBox(
-                    detection.x, detection.y, detection.width, detection.height,
-                    detection.className, detection.confidence));
+
+        if (detections != null) {
+            Log.d(TAG, "DETECTION_DEBUG: DetectionsData is not null, frame_id: " + detections.frameId);
+            if (detections.detections != null) {
+                Log.d(TAG, "DETECTION_DEBUG: detections array not null, length: " + detections.detections.length);
+                for (YFPMessage.Detection detection : detections.detections) {
+                    Log.d(TAG, "DETECTION_DEBUG: Adding detection: " + detection.className +
+                          " at (" + detection.x + "," + detection.y + "," + detection.width + "," + detection.height + ")");
+                    boxes.add(new DetectionOverlayView.DetectionBox(
+                        detection.x, detection.y, detection.width, detection.height,
+                        detection.className, detection.confidence));
+                }
+            } else {
+                Log.w(TAG, "DETECTION_DEBUG: detections.detections array is null");
             }
+        } else {
+            Log.w(TAG, "DETECTION_DEBUG: DetectionsData is null");
         }
-        
+
+        Log.d(TAG, "DETECTION_DEBUG: Setting " + boxes.size() + " detection boxes on overlay");
         overlayView.setDetections(boxes);
         detectionCount.setText("Detections: " + boxes.size());
+        Log.d(TAG, "DETECTION_DEBUG: Updated UI with detection count: " + boxes.size());
     }
 
     @Override
