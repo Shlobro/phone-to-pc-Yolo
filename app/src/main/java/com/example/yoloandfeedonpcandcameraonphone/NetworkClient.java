@@ -88,6 +88,8 @@ public class NetworkClient {
                 Log.d(TAG, "BASIC_DEBUG: UDP socket created");
                 Log.d(TAG, "BASIC_DEBUG: UDP socket local address: " + udpSocket.getLocalAddress());
                 Log.d(TAG, "BASIC_DEBUG: UDP socket local port: " + udpSocket.getLocalPort());
+                Log.d(TAG, "BASIC_DEBUG: UDP socket is bound: " + udpSocket.isBound());
+                Log.d(TAG, "BASIC_DEBUG: UDP socket is closed: " + udpSocket.isClosed());
 
                 YFPMessage connectMsg = new YFPMessage(YFPMessage.MessageType.CONNECT,
                     new YFPMessage.ConnectData(android.os.Build.DEVICE, 1920, 1080));
@@ -155,6 +157,17 @@ public class NetworkClient {
         executor.execute(() -> {
             byte[] buffer = new byte[4096];
             Log.d(TAG, "BASIC_DEBUG: UDP listener thread started, isConnected=" + isConnected);
+
+            // Set a timeout for the UDP socket to handle missed packets
+            try {
+                if (udpSocket != null) {
+                    udpSocket.setSoTimeout(10000); // 10 second timeout
+                    Log.d(TAG, "BASIC_DEBUG: Set UDP socket timeout to 10 seconds");
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "BASIC_DEBUG: Failed to set UDP socket timeout", e);
+            }
+
             while (isConnected) {
                 try {
                     if (udpSocket == null || udpSocket.isClosed()) {
@@ -170,11 +183,28 @@ public class NetworkClient {
                     Log.d(TAG, "BASIC_DEBUG: Received UDP packet, length=" + packet.getLength());
                     Log.d(TAG, "DETECTION_DEBUG: Received UDP data: " + data);
 
-                    YFPMessage message = YFPMessage.fromJson(data);
-                    Log.d(TAG, "DETECTION_DEBUG: Parsed message type: " + message.type);
+                    try {
+                        YFPMessage message = YFPMessage.fromJson(data);
+                        Log.d(TAG, "DETECTION_DEBUG: Parsed message type: " + message.type);
+                        Log.d(TAG, "DETECTION_DEBUG: Message data object type: " +
+                              (message.data != null ? message.data.getClass().getSimpleName() : "null"));
 
-                    mainHandler.post(() -> handleMessage(message));
+                        mainHandler.post(() -> handleMessage(message));
+                    } catch (Exception e) {
+                        Log.e(TAG, "DETECTION_DEBUG: Error parsing JSON message: " + e.getMessage());
+                        Log.e(TAG, "DETECTION_DEBUG: Raw JSON that failed to parse: " + data);
+                        e.printStackTrace();
+                    }
                     
+                } catch (java.net.SocketTimeoutException e) {
+                    if (isConnected) {
+                        Log.d(TAG, "BASIC_DEBUG: UDP socket timeout, continuing to listen...");
+                        // Continue listening - this is normal if no packets are received for a while
+                        continue;
+                    } else {
+                        Log.d(TAG, "BASIC_DEBUG: Socket timeout during disconnect, stopping listener");
+                        break;
+                    }
                 } catch (SocketException e) {
                     if (isConnected) {
                         Log.e(TAG, "BASIC_DEBUG: Socket exception while listening", e);
@@ -246,20 +276,24 @@ public class NetworkClient {
     }
 
     public void disconnect() {
+        Log.d(TAG, "BASIC_DEBUG: Starting disconnection cleanup");
         isConnected = false;
-        
+
         if (udpSocket != null && !udpSocket.isClosed()) {
+            Log.d(TAG, "BASIC_DEBUG: Closing UDP socket");
             udpSocket.close();
         }
-        
+
         if (tcpSocket != null && !tcpSocket.isClosed()) {
             try {
+                Log.d(TAG, "BASIC_DEBUG: Closing TCP socket");
                 tcpSocket.close();
             } catch (IOException e) {
                 Log.e(TAG, "Error closing TCP socket", e);
             }
         }
-        
+
+        Log.d(TAG, "BASIC_DEBUG: Disconnection cleanup completed");
         mainHandler.post(() -> callback.onDisconnected());
     }
 

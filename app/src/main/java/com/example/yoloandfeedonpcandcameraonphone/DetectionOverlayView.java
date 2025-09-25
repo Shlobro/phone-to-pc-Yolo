@@ -6,12 +6,14 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.View;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public class DetectionOverlayView extends View {
+    private static final String TAG = "DetectionOverlayView";
     private Paint paint;
     private List<DetectionBox> detectionBoxes;
 
@@ -34,31 +36,49 @@ public class DetectionOverlayView extends View {
     }
 
     public void setDetections(List<DetectionBox> detections) {
+        Log.d(TAG, "OVERLAY_DEBUG: setDetections called");
         this.detectionBoxes = detections != null ? detections : new ArrayList<>();
+        Log.d(TAG, "OVERLAY_DEBUG: Detection boxes count: " + this.detectionBoxes.size());
+        for (int i = 0; i < this.detectionBoxes.size(); i++) {
+            DetectionBox box = this.detectionBoxes.get(i);
+            Log.d(TAG, "OVERLAY_DEBUG: Box " + i + ": " + box.label +
+                  " at (" + box.x + "," + box.y + "," + box.width + "," + box.height + ")");
+        }
+        Log.d(TAG, "OVERLAY_DEBUG: Calling invalidate() to trigger redraw");
         invalidate();
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        
-        for (DetectionBox box : detectionBoxes) {
+
+        Log.d(TAG, "OVERLAY_DEBUG: onDraw called, view size: " + getWidth() + "x" + getHeight());
+        Log.d(TAG, "OVERLAY_DEBUG: Drawing " + detectionBoxes.size() + " detection boxes");
+
+        for (int i = 0; i < detectionBoxes.size(); i++) {
+            DetectionBox box = detectionBoxes.get(i);
             RectF rect = new RectF(
                 box.x * getWidth(),
                 box.y * getHeight(),
                 (box.x + box.width) * getWidth(),
                 (box.y + box.height) * getHeight()
             );
+
+            Log.d(TAG, "OVERLAY_DEBUG: Box " + i + " converted to pixels: " +
+                  rect.left + "," + rect.top + "," + rect.right + "," + rect.bottom);
+
             canvas.drawRect(rect, paint);
-            
+
             if (box.label != null && !box.label.isEmpty()) {
                 Paint textPaint = new Paint();
                 textPaint.setColor(Color.RED);
                 textPaint.setTextSize(40f);
-                canvas.drawText(box.label + " " + String.format("%.2f", box.confidence), 
+                canvas.drawText(box.label + " " + String.format("%.2f", box.confidence),
                     rect.left, rect.top - 10, textPaint);
             }
         }
+
+        Log.d(TAG, "OVERLAY_DEBUG: onDraw completed");
     }
 
     public static class DetectionBox {

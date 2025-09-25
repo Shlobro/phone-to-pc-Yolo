@@ -239,12 +239,29 @@ public class MainActivity extends AppCompatActivity implements NetworkClient.Net
             Log.d(TAG, "DETECTION_DEBUG: DetectionsData is not null, frame_id: " + detections.frameId);
             if (detections.detections != null) {
                 Log.d(TAG, "DETECTION_DEBUG: detections array not null, length: " + detections.detections.length);
-                for (YFPMessage.Detection detection : detections.detections) {
-                    Log.d(TAG, "DETECTION_DEBUG: Adding detection: " + detection.className +
-                          " at (" + detection.x + "," + detection.y + "," + detection.width + "," + detection.height + ")");
-                    boxes.add(new DetectionOverlayView.DetectionBox(
+                for (int i = 0; i < detections.detections.length; i++) {
+                    YFPMessage.Detection detection = detections.detections[i];
+                    Log.d(TAG, "DETECTION_DEBUG: Processing detection " + i + ": " + detection.className +
+                          " at (" + detection.x + "," + detection.y + "," + detection.width + "," + detection.height +
+                          ") conf=" + detection.confidence);
+
+                    // Validate coordinates
+                    if (detection.x < 0 || detection.x > 1 || detection.y < 0 || detection.y > 1 ||
+                        detection.width < 0 || detection.width > 1 || detection.height < 0 || detection.height > 1) {
+                        Log.w(TAG, "DETECTION_DEBUG: Invalid coordinates for detection " + i +
+                              ": values should be between 0.0 and 1.0");
+                    }
+
+                    if (detection.x + detection.width > 1 || detection.y + detection.height > 1) {
+                        Log.w(TAG, "DETECTION_DEBUG: Detection " + i + " extends beyond image bounds");
+                    }
+
+                    DetectionOverlayView.DetectionBox box = new DetectionOverlayView.DetectionBox(
                         detection.x, detection.y, detection.width, detection.height,
-                        detection.className, detection.confidence));
+                        detection.className, detection.confidence);
+                    boxes.add(box);
+
+                    Log.d(TAG, "DETECTION_DEBUG: Successfully created DetectionBox " + i);
                 }
             } else {
                 Log.w(TAG, "DETECTION_DEBUG: detections.detections array is null");
@@ -254,9 +271,13 @@ public class MainActivity extends AppCompatActivity implements NetworkClient.Net
         }
 
         Log.d(TAG, "DETECTION_DEBUG: Setting " + boxes.size() + " detection boxes on overlay");
-        overlayView.setDetections(boxes);
-        detectionCount.setText("Detections: " + boxes.size());
-        Log.d(TAG, "DETECTION_DEBUG: Updated UI with detection count: " + boxes.size());
+        Log.d(TAG, "DETECTION_DEBUG: About to call overlayView.setDetections()");
+
+        uiHandler.post(() -> {
+            overlayView.setDetections(boxes);
+            detectionCount.setText("Detections: " + boxes.size());
+            Log.d(TAG, "DETECTION_DEBUG: Updated UI with detection count: " + boxes.size());
+        });
     }
 
     @Override

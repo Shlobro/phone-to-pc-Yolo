@@ -283,6 +283,18 @@ class YFPServer:
                 client_id = f"{addr[0]}:{addr[1]}"
                 
                 if message.get('type') == 'CONNECT':
+                    # Clean up any existing entries for this IP (handles reconnection)
+                    client_ip = addr[0]
+                    clients_to_remove = []
+                    for existing_id, existing_info in self.clients.items():
+                        if existing_info['addr'][0] == client_ip:
+                            clients_to_remove.append(existing_id)
+                            print(f"BASIC_DEBUG: Removing old client entry for reconnection: {existing_id}")
+
+                    for old_client_id in clients_to_remove:
+                        del self.clients[old_client_id]
+
+                    # Add the new client entry
                     self.clients[client_id] = {
                         'addr': addr,
                         'udp_addr': addr,  # Store UDP address for responses
@@ -387,7 +399,19 @@ class YFPServer:
                 break
                 
         client_socket.close()
-        self.log_message(f"Client {addr[0]} disconnected")
+
+        # Clean up client entries for this IP address
+        client_ip = addr[0]
+        clients_to_remove = []
+        for client_id, client_info in self.clients.items():
+            if client_info['addr'][0] == client_ip:
+                clients_to_remove.append(client_id)
+
+        for client_id in clients_to_remove:
+            del self.clients[client_id]
+            print(f"BASIC_DEBUG: Cleaned up client entry: {client_id}")
+
+        self.log_message(f"Client {addr[0]} disconnected and cleaned up")
     
     def process_frame(self, image_data, frame_info, client_addr):
         """Process received frame with YOLO detection"""
@@ -472,14 +496,20 @@ class YFPServer:
             client_ip = tcp_client_addr[0]
             udp_addr = None
 
+            print(f"DETECTION_DEBUG: Looking for UDP address for TCP client {tcp_client_addr}")
+            print(f"DETECTION_DEBUG: Current clients: {list(self.clients.keys())}")
+
             # Look for a client with matching IP address
             for client_id, client_info in self.clients.items():
+                print(f"DETECTION_DEBUG: Checking client {client_id}: addr={client_info['addr']}, udp_addr={client_info['udp_addr']}")
                 if client_info['addr'][0] == client_ip:
                     udp_addr = client_info['udp_addr']
+                    print(f"DETECTION_DEBUG: Found matching UDP address: {udp_addr}")
                     break
 
             if not udp_addr:
                 print(f"BASIC_DEBUG: No UDP address found for client {client_ip}, cannot send detections")
+                print(f"BASIC_DEBUG: Available clients: {[(k, v['addr']) for k, v in self.clients.items()]}")
                 return
 
             response = {
