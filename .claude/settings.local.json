@@ -19,7 +19,8 @@
       "Bash(findstr:*)",
       "Bash(gradlew.bat build:*)",
       "Bash(./gradlew:*)",
-      "Bash(.\\gradlew.bat build:*)"
+      "Bash(.\\gradlew.bat build:*)",
+      "Bash(cmd /c:*)"
     ],
     "deny": [],
     "ask": []
